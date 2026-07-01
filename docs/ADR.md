@@ -14,7 +14,7 @@ The prototype order-to-payment pipeline used bare XREAD without consumer groups,
 Which did you choose — at-most-once / at-least-once / effectively-once — and **why**?
 What does that imply the consumer must guarantee?
 
-We chose at-least-once delivery using Redis Streams consumer groups with XREADGROUP/XACK. This guarantees no message loss on worker restart: unacknowledged messages remain in the pending entries list and are reclaimed via XCLAIM on restart. The tradeoff is that consumers must be idempotent to handle duplicate deliveries safely.
+We chose at-least-once delivery using Redis Streams consumer groups with XREADGROUP/XACK. This guarantees no message loss on worker restart: unacknowledged messages remain in the pending entries list and are reclaimed via XCLAIM on restart and periodically at runtime. The tradeoff is that consumers must be idempotent to handle duplicate deliveries safely.
 
 ### Idempotency
 How do you make re-processing the same order a no-op? What's the key, where does the
@@ -55,7 +55,7 @@ The pipeline now correctly handles duplicate deliveries, worker restarts, and tr
 
 ## CI/CD vulnerability and quality scan
 
-A `scan` job runs on every push and PR, installing Trivy via its official install script and scanning each of the three Docker images (`producer`, `worker`, `payments`) for CRITICAL and HIGH severity vulnerabilities. The job fails on any finding (`--exit-code 1`), blocking merge until the vulnerability is addressed. A complementary `hadolint` step lints the three Dockerfiles against best practices: pinned base image digests, non-root USER directives, COPY ordering for cache efficiency, and avoidance of `latest` tags. The images inherit from `python:3.12-slim`, which is regularly patched upstream, so scan noise is expected to be low. This gate prevents vulnerable images and Dockerfile drift from reaching production without adding external GitHub Actions dependencies.
+A `scan` job runs on every push and PR, installing Trivy via its official install script and scanning each of the three Docker images (`producer`, `worker`, `payments`) for CRITICAL and HIGH severity vulnerabilities. The job fails on any finding (`--exit-code 1`), blocking merge until the vulnerability is addressed. A complementary `hadolint` step lints the three Dockerfiles against best practices: pinned base image digests, non-root USER directives, COPY ordering for cache efficiency, and avoidance of `latest` tags. The images inherit from `python:3.12-slim`, which is regularly patched upstream, so scan noise is expected to be low. This gate prevents vulnerable images and Dockerfile drift from reaching production without adding GitHub Actions marketplace dependencies.
 
 ## CI/CD future improvements
 
