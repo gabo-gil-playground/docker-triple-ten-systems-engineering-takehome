@@ -12,7 +12,4 @@ where your judgment overrode it. Keep this short.
   * First, Redis data loss is correlated: both the stream and the Set live in the same Redis instance — a restart or partial RDB restore could recover messages from the stream but lose the idempotency Set, silently enabling double charges.
   * Second, the Set grows unbounded, which is fine for 60 test messages but a memory leak in production.
   * Third, the window between INCRBY ledger and SADD is a crash vulnerability: if the worker dies in that window, the retry-detection key is absent and the customer is charged twice.
-* What I did instead: Kept the Set approach for this exercise (single Redis instance, no persistence, 60 messages — the risks don't materialize here) but documented in the ADR that production requires: per-order keys with unique UUID + TTL expiration to bound memory, an idempotency token passed to the downstream payment API (or an idempotent payment endpoint) and ideally a transactional outbox to close the ledger-vs-marker gap.
-
-<If you genuinely used no AI on this task, say so here and tell us how you would have
-used it and what you'd have double-checked.>
+* What I did instead: Accepted the Set approach as a starting point but later evolved it to per-order idempotency keys (order:{order_id}) acting as a state machine: SETNX atomically claims "processing" before the charge, and SET transitions to "done" with a 24h TTL after success. This addresses two of the three identified failure modes — unbounded memory growth (TTL caps it) and the ledger-vs-marker gap (the "processing" state enables crash recovery to distinguish in-flight from completed orders). The correlated data-loss risk remains and is documented in the ADR.
