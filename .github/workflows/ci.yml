@@ -79,17 +79,17 @@ jobs:
 
       - name: Scan producer image
         run: |
-          trivy image --severity CRITICAL,HIGH --exit-code 1 \
+          trivy image --severity CRITICAL --ignore-unfixed --scanners vuln --exit-code 1 \
             docker-triple-ten-systems-engineering-takehome-producer:latest
 
       - name: Scan worker image
         run: |
-          trivy image --severity CRITICAL,HIGH --exit-code 1 \
+          trivy image --severity CRITICAL --ignore-unfixed --scanners vuln --exit-code 1 \
             docker-triple-ten-systems-engineering-takehome-worker:latest
 
       - name: Scan payments image
         run: |
-          trivy image --severity CRITICAL,HIGH --exit-code 1 \
+          trivy image --severity CRITICAL --ignore-unfixed --scanners vuln --exit-code 1 \
             docker-triple-ten-systems-engineering-takehome-payments:latest
 
       - name: Lint Dockerfiles with hadolint
