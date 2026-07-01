@@ -34,6 +34,7 @@ services:
     environment:
       - REDIS_URL=redis://redis:6379
       - PAYMENTS_URL=http://payments:8001
+      - MAX_RETRIES=5
     depends_on:
       redis:
         condition: service_healthy

@@ -19,10 +19,11 @@ import requests
 REDIS_URL = os.environ["REDIS_URL"]
 PAYMENTS_URL = os.environ["PAYMENTS_URL"]
 ORDERS_STREAM = "orders"
+DEAD_LETTER_STREAM = "orders:dead"
 GROUP_NAME = "workers"
 CONSUMER_NAME = f"{socket.gethostname()}-{os.getpid()}"
 
-MAX_RETRIES = 5
+MAX_RETRIES = int(os.environ.get("MAX_RETRIES", "5"))
 RETRY_BASE_DELAY = 1.0
 IDEMPOTENCY_TTL = 86400  # 24 hours
 
@@ -89,6 +90,10 @@ def claim_pending():
             if success:
                 mark_order_done(order["order_id"])
                 r.xack(ORDERS_STREAM, GROUP_NAME, msg_id)
+            else:
+                r.xadd(DEAD_LETTER_STREAM, {"data": fields["data"]})
+                r.incr("dead_letter_count")
+                r.xack(ORDERS_STREAM, GROUP_NAME, msg_id)
 
 
 def process(order):
@@ -114,7 +119,7 @@ def process(order):
                 continue
             print(
                 f"payment failed for {order['order_id']} after {MAX_RETRIES} attempts, "
-                f"leaving pending for recovery",
+                f"moving to dead-letter",
                 flush=True,
             )
             return False
@@ -147,6 +152,10 @@ def main():
                 success = process(order)
                 if success:
                     mark_order_done(order["order_id"])
+                    r.xack(ORDERS_STREAM, GROUP_NAME, msg_id)
+                else:
+                    r.xadd(DEAD_LETTER_STREAM, {"data": fields["data"]})
+                    r.incr("dead_letter_count")
                     r.xack(ORDERS_STREAM, GROUP_NAME, msg_id)
 
 

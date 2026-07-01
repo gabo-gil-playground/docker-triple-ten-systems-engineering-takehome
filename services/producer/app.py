@@ -7,7 +7,7 @@ import os
 
 import redis
 from fastapi import FastAPI
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379")
 ORDERS_STREAM = "orders"
@@ -19,7 +19,14 @@ app = FastAPI(title="orders-producer")
 class Order(BaseModel):
     order_id: str
     customer_id: str
-    amount_cents: int
+    amount_cents: int = Field(gt=0)
+
+    @field_validator("order_id", "customer_id")
+    @classmethod
+    def not_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("must not be empty")
+        return v.strip()
 
 
 @app.post("/orders", status_code=202)
@@ -42,6 +49,7 @@ def ledger():
     return {
         "ledger": totals,
         "processed_count": int(r.get("processed_count") or 0),
+        "dead_letter_count": int(r.get("dead_letter_count") or 0),
     }
 
 

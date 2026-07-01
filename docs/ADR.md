@@ -28,6 +28,8 @@ one? Where do poison messages go? How do you keep one bad message from halting e
 
 Failed payment calls are retried with exponential backoff (base 1s, multiplier 2, max 5 attempts) plus random jitter (0–30% of delay) to avoid thundering herd in multi-worker deployments. HTTP 5xx, timeouts, and connection errors are treated as transient and retried. Messages that exhaust all retries remain in the consumer group's pending entries list and are periodically reclaimed by a background recovery loop, preventing silent data loss without requiring a worker restart.
 
+Messages that exhaust all retries are moved to a dedicated orders:dead Redis Stream and acknowledged from the main consumer group, acting as a dead-letter queue. This prevents poison messages from blocking the stream and enables manual inspection via XREAD on the dead-letter stream without affecting production flow.
+
 ## Tradeoffs & alternatives
 
 ### Build vs adopt: Redis Streams vs Kafka / SQS / managed broker
