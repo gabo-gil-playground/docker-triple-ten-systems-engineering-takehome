@@ -3,9 +3,10 @@ name: ci
 # This pipeline IS the definition of done. On the prototype as shipped it is RED.
 # Your job is to make it GREEN by making the pipeline correct and resilient.
 #
-# Two jobs:
+# Three jobs:
 #   lint            - fast feedback: every service / script compiles
-#   integration     - boots the whole stack and runs the acceptance check as a gate
+#   integration     - boots the whole stack, restarts the worker mid-processing,
+#                     and runs the acceptance check as a gate
 
 on:
   push:
@@ -47,7 +48,12 @@ jobs:
       - name: Generate load (includes duplicate orders)
         run: python scripts/load.py
 
-      - name: Acceptance check (must be correct under duplicates + flaky payments)
+      - name: Restart worker mid-processing (resilience)
+        run: |
+          docker compose restart worker
+          sleep 5
+
+      - name: Acceptance check (must be correct under duplicates + flaky payments + worker restart)
         run: python scripts/check.py
 
       - name: Dump container logs on failure
@@ -57,3 +63,39 @@ jobs:
       - name: Tear down
         if: always()
         run: docker compose down -v
+
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build images
+        run: docker compose build
+
+      - name: Install Trivy
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+            | sh -s -- -b /usr/local/bin
+
+      - name: Scan producer image
+        run: |
+          trivy image --severity CRITICAL --ignore-unfixed --scanners vuln --exit-code 1 \
+            docker-triple-ten-systems-engineering-takehome-producer:latest
+
+      - name: Scan worker image
+        run: |
+          trivy image --severity CRITICAL --ignore-unfixed --scanners vuln --exit-code 1 \
+            docker-triple-ten-systems-engineering-takehome-worker:latest
+
+      - name: Scan payments image
+        run: |
+          trivy image --severity CRITICAL --ignore-unfixed --scanners vuln --exit-code 1 \
+            docker-triple-ten-systems-engineering-takehome-payments:latest
+
+      - name: Lint Dockerfiles with hadolint
+        run: |
+          curl -sfL \
+            https://github.com/hadolint/hadolint/releases/download/v2.12.0/hadolint-Linux-x86_64 \
+            -o /usr/local/bin/hadolint
+          chmod +x /usr/local/bin/hadolint
+          hadolint services/producer/Dockerfile services/worker/Dockerfile services/payments/Dockerfile
