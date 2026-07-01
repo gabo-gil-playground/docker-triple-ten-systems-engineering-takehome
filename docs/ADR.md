@@ -52,3 +52,15 @@ The first bottleneck is the single-threaded worker: at 100× throughput, one Pyt
 What's better now. What's still weak / what you'd do next with more time.
 
 The pipeline now correctly handles duplicate deliveries, worker restarts, and transient payment failures. Every customer is charged exactly the correct amount under the conditions defined in the acceptance check. Exhausted messages are routed to the orders:dead stream for manual inspection. What remains: no consumer observability metrics (lag, throughput), no structured metrics or Prometheus endpoint, and the residual crash window between charge and idempotency marker is documented but not closed. With more time: add Prometheus metrics, OpenTelemetry tracing, and a Redis Lua script to atomically update the ledger and idempotency marker.
+
+## CI/CD vulnerability and quality scan
+
+A `scan` job runs on every push and PR, installing Trivy via its official install script and scanning each of the three Docker images (`producer`, `worker`, `payments`) for CRITICAL and HIGH severity vulnerabilities. The job fails on any finding (`--exit-code 1`), blocking merge until the vulnerability is addressed. A complementary `hadolint` step lints the three Dockerfiles against best practices: pinned base image digests, non-root USER directives, COPY ordering for cache efficiency, and avoidance of `latest` tags. The images inherit from `python:3.12-slim`, which is regularly patched upstream, so scan noise is expected to be low. This gate prevents vulnerable images and Dockerfile drift from reaching production without adding external GitHub Actions dependencies.
+
+## CI/CD future improvements
+
+Two additional CI extensions were designed but deferred to keep the exercise focused on pipeline correctness. Each is described with its implementation approach below.
+
+**Build-and-push to GHCR:** a `publish` job triggered on pushes to `main` would build the three Docker images, tag them with the short commit SHA and `latest`, and push them to GitHub Container Registry via `docker/login-action` and `docker buildx`. The job authenticates using the built-in `GITHUB_TOKEN` with `packages: write` permission. Implementation steps: (1) add `permissions: packages: write` to the job, (2) run `docker compose build`, (3) tag each image as `ghcr.io/${{ github.repository }}/<service>:${{ github.sha }}` and `ghcr.io/${{ github.repository }}/<service>:latest`, (4) `docker push` both tags. This enables SHA-pinned deployments and an audit trail of what was deployed when, feeding into the canary rollout strategy described in From CI to CD.
+
+**Smoke-test:** a `smoke` job starts a freshly built producer image in isolation and hits its `/health` endpoint before the integration suite runs. Implementation: (1) build the producer image, (2) run it as a detached container with `docker run -d -p 8000:8000`, (3) poll `http://localhost:8000/health` with `curl --retry 5 --retry-delay 2 --max-time 15`, (4) stop and remove the container. This gate catches configuration regressions (missing env vars, broken entrypoint) before they reach the full Docker Compose stack, saving CI minutes on fast-fail.

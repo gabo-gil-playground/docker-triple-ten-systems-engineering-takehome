@@ -63,3 +63,39 @@ jobs:
       - name: Tear down
         if: always()
         run: docker compose down -v
+
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build images
+        run: docker compose build
+
+      - name: Install Trivy
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+            | sh -s -- -b /usr/local/bin
+
+      - name: Scan producer image
+        run: |
+          trivy image --severity CRITICAL,HIGH --exit-code 1 \
+            docker-triple-ten-systems-engineering-takehome-producer:latest
+
+      - name: Scan worker image
+        run: |
+          trivy image --severity CRITICAL,HIGH --exit-code 1 \
+            docker-triple-ten-systems-engineering-takehome-worker:latest
+
+      - name: Scan payments image
+        run: |
+          trivy image --severity CRITICAL,HIGH --exit-code 1 \
+            docker-triple-ten-systems-engineering-takehome-payments:latest
+
+      - name: Lint Dockerfiles with hadolint
+        run: |
+          curl -sfL \
+            https://github.com/hadolint/hadolint/releases/download/v2.12.0/hadolint-Linux-x86_64 \
+            -o /usr/local/bin/hadolint
+          chmod +x /usr/local/bin/hadolint
+          hadolint services/producer/Dockerfile services/worker/Dockerfile services/payments/Dockerfile
