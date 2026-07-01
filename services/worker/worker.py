@@ -68,7 +68,8 @@ def try_claim_order(order_id, force=False):
         if not force:
             log.info(json.dumps({"event": "skip_inflight", "order_id": order_id}))
             return False
-    acquired = r.set(key, "processing", nx=not force)
+        r.delete(key)
+    acquired = r.set(key, "processing", nx=True)
     if not acquired:
         log.info(json.dumps({"event": "skip_already_claimed", "order_id": order_id}))
         return False
@@ -94,6 +95,8 @@ def claim_pending():
     pending = r.xpending_range(ORDERS_STREAM, GROUP_NAME, min="-", max="+", count=100)
     if not pending:
         return
+    stagger = random.uniform(0, 1.5)
+    time.sleep(stagger)
     for entry in pending:
         claimed = r.xclaim(
             ORDERS_STREAM,
