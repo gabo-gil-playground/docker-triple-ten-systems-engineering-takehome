@@ -3,9 +3,10 @@ name: ci
 # This pipeline IS the definition of done. On the prototype as shipped it is RED.
 # Your job is to make it GREEN by making the pipeline correct and resilient.
 #
-# Two jobs:
+# Three jobs:
 #   lint            - fast feedback: every service / script compiles
-#   integration     - boots the whole stack and runs the acceptance check as a gate
+#   integration     - boots the whole stack, restarts the worker mid-processing,
+#                     and runs the acceptance check as a gate
 
 on:
   push:
@@ -47,7 +48,12 @@ jobs:
       - name: Generate load (includes duplicate orders)
         run: python scripts/load.py
 
-      - name: Acceptance check (must be correct under duplicates + flaky payments)
+      - name: Restart worker mid-processing (resilience)
+        run: |
+          docker compose restart worker
+          sleep 5
+
+      - name: Acceptance check (must be correct under duplicates + flaky payments + worker restart)
         run: python scripts/check.py
 
       - name: Dump container logs on failure

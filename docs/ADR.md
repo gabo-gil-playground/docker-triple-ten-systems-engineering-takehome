@@ -26,9 +26,7 @@ Idempotency is achieved via per-order Redis keys (order:{order_id}) acting as a 
 Retries, backoff, timeouts. How do you tell a *transient* failure from a *permanent*
 one? Where do poison messages go? How do you keep one bad message from halting everything?
 
-Failed payment calls are retried with exponential backoff (base 1s, multiplier 2, max 5 attempts) plus random jitter (0–30% of delay) to avoid thundering herd in multi-worker deployments. HTTP 5xx, timeouts, and connection errors are treated as transient and retried. Messages that exhaust all retries remain in the consumer group's pending entries list and are periodically reclaimed by a background recovery loop, preventing silent data loss without requiring a worker restart.
-
-Messages that exhaust all retries are moved to a dedicated orders:dead Redis Stream and acknowledged from the main consumer group, acting as a dead-letter queue. This prevents poison messages from blocking the stream and enables manual inspection via XREAD on the dead-letter stream without affecting production flow.
+HTTP calls to the payments service carry a (3, 10) connection/read timeout to bound the impact of the service's deliberate 5-second hangs, treating timeouts as transient failures eligible for retry. Failed payment calls are retried with exponential backoff (base 1s, multiplier 2, max 5 attempts) plus random jitter (0–30% of delay) to avoid thundering herd in multi-worker deployments. HTTP 5xx and connection errors are also treated as transient and retried. Messages that exhaust all retries are moved to a dedicated `orders:dead` Redis Stream and acknowledged from the main consumer group, acting as a dead-letter queue. This prevents poison messages from blocking the stream and enables manual inspection via `XREAD` on the dead-letter stream without affecting production flow.
 
 ## Tradeoffs & alternatives
 
@@ -53,4 +51,4 @@ The first bottleneck is the single-threaded worker: at 100× throughput, one Pyt
 ## Consequences
 What's better now. What's still weak / what you'd do next with more time.
 
-The pipeline now correctly handles duplicate deliveries, worker restarts, and transient payment failures. Every customer is charged exactly the correct amount under the conditions defined in the acceptance check. What remains: no dead-letter queue for non-retryable poison messages, no structured logging or metrics, and the residual crash window between charge and idempotency marker is documented but not closed. With more time: add a dead-letter stream, structured observability with OpenTelemetry, and a Redis Lua script to atomically update the ledger and idempotency marker.
+The pipeline now correctly handles duplicate deliveries, worker restarts, and transient payment failures. Every customer is charged exactly the correct amount under the conditions defined in the acceptance check. Exhausted messages are routed to the orders:dead stream for manual inspection. What remains: no consumer observability metrics (lag, throughput), no structured metrics or Prometheus endpoint, and the residual crash window between charge and idempotency marker is documented but not closed. With more time: add Prometheus metrics, OpenTelemetry tracing, and a Redis Lua script to atomically update the ledger and idempotency marker.
